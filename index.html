@@ -246,13 +246,11 @@
         <div class="container d-flex align-items-center justify-content-between">
             <div>
                 <h3 class="mb-0">PowerBI Export Filterer</h3>
-                <div class="small-muted">Upload → Filter → Export. Filters are configurable via
-                    <code>filters.json</code>.
+                <div class="text-white small">Upload ⬆️ → Filter 🔍 → Export ⬇️.
                 </div>
             </div>
             <div class="text-end">
-                <div class="small-muted">Hosted-ready single file</div>
-                <div class="text-white small">Ready for GitHub Pages</div>
+                <div class="text-white small">Filter the Desired events</div>
             </div>
         </div>
     </header>
@@ -272,17 +270,15 @@
                     </div>
 
                     <div class="mt-3">
-                        <label class="form-label"><strong>3) Date filter (optional)</strong></label>
-                        <select id="dateColumnSelect" class="form-select mb-2">
-                            <option value="">-- Choose date column (if any) --</option>
-                        </select>
+                        <label class="form-label"><strong>Date Filter</strong></label>
                         <div class="d-flex gap-2">
                             <input id="startDate" class="form-control" type="date" />
                             <input id="endDate" class="form-control" type="date" />
                         </div>
-                        <div class="form-text">If date column selected, only rows within the chosen date range will be
-                            shown.</div>
+                        <div class="form-text">Rows will be filtered by <b>DATE TIME PRE KO (UTC)</b> within the chosen
+                            range.</div>
                     </div>
+
                 </div>
 
                 <div class="col-12 col-md-2 text-center">
@@ -355,6 +351,16 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
     <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+    <script src="https://momentjs.com/downloads/moment.min.js"></script>
+    <script src="https://cdn.datatables.net/plug-ins/1.13.6/sorting/datetime-moment.js"></script>
+    <script>
+        $(document).ready(function () {
+            // Register DataTables to use moment.js date parsing
+            $.fn.dataTable.moment("DD/MM/YYYY HH:mm:ss");
+        });
+    </script>
+
+
 
     <script>
         /* Updated & hardened index.js inlined */
@@ -378,6 +384,7 @@
         let dataTable = null;
         let currentSearch = '';
         let workbookSheets = [];
+        let dateColumnSelected = null; // NEW: chosen date column name (string) - always DATE TIME PRE KO (UTC)
 
         /* Helpers */
         function setFileInfo(t) { $('#fileInfo').text(t || ''); }
@@ -534,24 +541,37 @@
         /* populate date columns dropdown */
         // ---------- REPLACE populateDateColumns() ----------
         function populateDateColumns() {
-            const $dsel = $('#dateColumnSelect').empty().append($('<option>').val('').text('-- Choose date column (if any) --'));
-            headers.forEach(h => $dsel.append($('<option>').val(h).text(h)));
-
-            // Auto-select DATE TIME PRE KO (UTC) if present (case-insensitive)
+            // We no longer rely on a DOM select. Choose DATE TIME PRE KO (UTC) automatically.
+            dateColumnSelected = null;
             const desired = 'DATE TIME PRE KO (UTC)';
-            const matched = headers.find(h => h.toLowerCase().trim() === desired.toLowerCase().trim());
-            if (matched) {
-                $dsel.val(matched);
-            } else {
-                // try contains match as fallback
-                const contains = headers.find(h => h.toLowerCase().includes('date time') && h.toLowerCase().includes('utc'));
-                if (contains) $dsel.val(contains);
+            if (headers && headers.length) {
+                // exact case-insensitive match first
+                const matched = headers.find(h => h.toLowerCase().trim() === desired.toLowerCase().trim());
+                if (matched) {
+                    dateColumnSelected = matched;
+                } else {
+                    // fallback: look for a header that contains both 'date time' and 'utc'
+                    const contains = headers.find(h => h.toLowerCase().includes('date time') && h.toLowerCase().includes('utc'));
+                    if (contains) dateColumnSelected = contains;
+                    // final fallback: try any header that includes 'date' and 'time'
+                    else {
+                        const anyDate = headers.find(h => h.toLowerCase().includes('date') && h.toLowerCase().includes('time'));
+                        if (anyDate) dateColumnSelected = anyDate;
+                    }
+                }
             }
 
-            // Hide the date column selector from UI (still functional in JS)
-            //$('#dateColumnSelect').parent().hide();
+            // Hide any leftover select in DOM if exists (safe even if it's already removed)
+            $('#dateColumnSelect').hide();
+            // Optionally hide label associated with it (if present)
+            $('label[for="dateColumnSelect"]').hide();
         }
 
+        if (!dateColumnSelected) {
+            console.warn('Date column "DATE TIME PRE KO (UTC)" not found. Date filtering will be disabled until a date-like column is present.');
+            // Optionally inform user via UI:
+            // setFileInfo('Warning: DATE TIME PRE KO (UTC) column not found — date filtering disabled.');
+        }
 
         /* render table - safe destroy & re-init */
         // Replace existing renderTable function with this safe version
@@ -602,17 +622,28 @@
             // Initialize DataTable safely inside try/catch
 
             try {
+                // Tell DataTables to parse DD/MM/YYYY HH:mm:ss format
+                $.fn.dataTable.moment("DD/MM/YYYY HH:mm:ss");
+
                 dataTable = $('#dataTable').DataTable({
                     pageLength: Math.min(Math.max(10, available), 250),
                     lengthMenu: [10, 25, 50, 100, 250],
                     scrollX: true,
                     autoWidth: false,
                     ordering: true,
-                    columnDefs: [{ targets: '_all', defaultContent: '' }]
+                    columnDefs: [
+                        { targets: '_all', defaultContent: '' },
+                        {
+                            targets: headers.indexOf("DATE TIME PRE KO (UTC)"),
+                            type: 'datetime-moment'
+                        }
+                    ],
+                    order: [[headers.indexOf("DATE TIME PRE KO (UTC)"), 'desc']] // default: latest first
                 });
             } catch (err) {
                 console.error('DataTable initialization error (non-fatal):', err);
             }
+
         }
 
 
@@ -641,6 +672,11 @@
             renderTable(originalData || []);
         });
 
+        // Auto-recompute table when user changes date inputs
+        $('#startDate, #endDate').on('change', function () {
+            const filtered = computeFilteredData();
+            renderTable(filtered);
+        });
 
         /* filter UI buttons */
         $('#selectAllFilters').on('click', () => $('.filter-checkbox').prop('checked', true));
@@ -659,7 +695,7 @@
             let rows = originalData.slice();
 
             // Date range filter (do not mutate date objects)
-            const dateCol = $('#dateColumnSelect').val();
+            const dateCol = dateColumnSelected; // use the auto-chosen column
             const sDateVal = $('#startDate').val();
             const eDateVal = $('#endDate').val();
             const sDate = sDateVal ? new Date(sDateVal) : null;
@@ -704,7 +740,6 @@
 
             return combined;
         }
-
 
         /* filter matching logic */
         function matchesFilter(rowObj, filterDef) {
@@ -754,7 +789,7 @@
                 return;
             }
             const selectedIdx = $('.filter-checkbox:checked').map(function () { return parseInt(this.value); }).get();
-            const dateCol = $('#dateColumnSelect').val();
+            const dateCol = dateColumnSelected;
             const sDate = $('#startDate').val() ? new Date($('#startDate').val()) : null;
             const eDate = $('#endDate').val() ? new Date($('#endDate').val()) : null;
 
@@ -819,7 +854,7 @@
             originalData = [];
             renderTable([]);
             // hide date selector container immediately on page load (still used by code)
-            $('#dateColumnSelect').parent().hide();
+            //$('#dateColumnSelect').parent().hide();
         });
         // ---------- ADD this to your JS (near the end, after initialization) ----------
         $(window).on('resize', function () {
@@ -831,6 +866,7 @@
             }
         });
 
+        
     </script>
 </body>
 </html>
