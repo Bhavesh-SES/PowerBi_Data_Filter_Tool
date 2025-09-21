@@ -227,6 +227,8 @@
             }
         }
 
+        #utcClock { opacity: 1.95; text-align: center; min-width: 140px  }
+
 
         @media (max-width: 767px) {
             .filters-dropdown {
@@ -251,7 +253,10 @@
             </div>
             <div class="text-end">
                 <div class="text-white small">Filter the Desired events</div>
+                <div id="utcClock" class="text-white small mt-1" style="font-family: monospace; letter-spacing:0.06em;">
+                </div>
             </div>
+
         </div>
     </header>
 
@@ -296,7 +301,7 @@
                 <div class="col-12 col-md-5">
                     <label class="form-label"><strong>Predefined Filters</strong></label>
 
-                    <div class="d-flex gap-2 mb-2">
+                    <div class="d-flex gap-2 mb-2 align-items-center">
                         <div class="dropdown filters-dropdown">
                             <button class="btn btn-light border dropdown-toggle w-100 text-start" type="button"
                                 id="filtersMenuBtn" data-bs-toggle="dropdown" aria-expanded="false">
@@ -312,8 +317,25 @@
                             </div>
                         </div>
 
+                        <!-- AND / OR toggle -->
+                        <div class="btn-group" role="group" aria-label="Filter mode">
+                            <input type="radio" class="btn-check" name="filterMode" id="filterModeAnd"
+                                autocomplete="off" checked>
+                            <label class="btn btn-outline-secondary" for="filterModeAnd">AND</label>
+
+                            <input type="radio" class="btn-check" name="filterMode" id="filterModeOr"
+                                autocomplete="off">
+                            <label class="btn btn-outline-secondary" for="filterModeOr">OR</label>
+                        </div>
+
                         <button id="applyFilters" class="btn btn-primary">Apply</button>
                     </div>
+
+                    <!-- OR-mode tab area (hidden until OR is applied) -->
+                    <div id="orTabsContainer" class="mt-2" style="display:none;">
+                        <div id="orTabs" class="btn-group" role="tablist" aria-label="Filter pages"></div>
+                    </div>
+
 
                     <div class="d-flex gap-2">
                         <button id="exportBtn" class="btn btn-success w-100">Export Filtered → Excel</button>
@@ -385,6 +407,11 @@
         let currentSearch = '';
         let workbookSheets = [];
         let dateColumnSelected = null; // NEW: chosen date column name (string) - always DATE TIME PRE KO (UTC)
+        let filterMode = 'AND';          // 'AND' or 'OR'
+        let filterMatchesMap = {};       // map: filterIndex -> matched rows (after date-filter)
+        let orUnionRows = [];            // union of matched rows
+        let activeOrKey = 'All';         // 'All' or string index (e.g., 'f_1')
+
 
         /* Helpers */
         function setFileInfo(t) { $('#fileInfo').text(t || ''); }
@@ -413,6 +440,34 @@
             const SS = pad(dt.getSeconds());
             return `${dd}/${mm}/${yyyy} ${HH}:${MM}:${SS}`;
         }
+
+        // ---------- UTC clock (24-hour HH:MM:SS) ----------
+        function pad2(n) { return n < 10 ? '0' + n : String(n); }
+
+        function updateUTCClockOnce() {
+            const d = new Date();
+            const h = pad2(d.getUTCHours());
+            const m = pad2(d.getUTCMinutes());
+            const s = pad2(d.getUTCSeconds());
+            // show pure HH:MM:SS and optionally append " UTC"
+            const txt = `${h}:${m}:${s} UTC`;
+            document.getElementById('utcClock') && (document.getElementById('utcClock').textContent = txt);
+        }
+
+        function startUTCClock() {
+            // update immediately then every 1s
+            updateUTCClockOnce();
+            // store interval id so it can be cleared if needed later
+            window._utcClockInterval = window._utcClockInterval || setInterval(updateUTCClockOnce, 1000);
+        }
+
+        function stopUTCClock() {
+            if (window._utcClockInterval) {
+                clearInterval(window._utcClockInterval);
+                window._utcClockInterval = null;
+            }
+        }
+
 
         /* Load filters.json if present */
         async function loadFiltersConfig() {
@@ -656,21 +711,21 @@
 
         /* clear all */
         // ---------- REPLACE clearAll handler WITH THIS ----------
-        $('#clearAll').on('click', () => {
-            // Uncheck filters, clear search & date inputs
+        $('#clearAll').off('click').on('click', () => {
             $('.filter-checkbox').prop('checked', false);
             $('#globalSearch').val('');
             $('#startDate').val('');
             $('#endDate').val('');
-            $('#dateColumnSelect').val('');
             currentSearch = '';
-
-            // Reset filter button label
             $('#filtersMenuBtn').text('Select filters...');
-
-            // Re-render full original data
+            filterMode = 'AND';
+            $('#filterModeAnd').prop('checked', true);
+            filterMatchesMap = {};
+            orUnionRows = [];
+            $('#orTabsContainer').hide();
             renderTable(originalData || []);
         });
+
 
         // Auto-recompute table when user changes date inputs
         $('#startDate, #endDate').on('change', function () {
@@ -681,10 +736,43 @@
         /* filter UI buttons */
         $('#selectAllFilters').on('click', () => $('.filter-checkbox').prop('checked', true));
         $('#clearFiltersBtn').on('click', () => $('.filter-checkbox').prop('checked', false));
-        $('#applyFilters').on('click', () => {
-            const filtered = computeFilteredData();
-            renderTable(filtered);
+        $('#applyFilters').off('click').on('click', () => {
+            const selectedIdx = $('.filter-checkbox:checked').map(function () { return parseInt(this.value); }).get();
+            // base rows apply date filter only (search will be applied on render)
+            const baseRows = getBaseRowsByDate();
+
+            filterMatchesMap = {};
+            orUnionRows = [];
+
+            // If no filters selected, just show the baseRows (apply global search)
+            if (!selectedIdx || selectedIdx.length === 0) {
+                $('#orTabsContainer').hide();
+                const rows = applySearchToRows(baseRows);
+                renderTable(rows);
+                return;
+            }
+
+            // Mode check
+            filterMode = $('#filterModeOr').is(':checked') ? 'OR' : 'AND';
+
+            if (filterMode === 'AND') {
+                // reuse computeFilteredData (which respects date+search and AND behavior)
+                // but computeFilteredData currently reads filters from checkboxes; it will work
+                const andRows = computeFilteredData();
+                $('#orTabsContainer').hide();
+                renderTable(andRows);
+            } else {
+                // OR mode: build per-filter matches & union
+                const res = computeFilterMatches(baseRows, selectedIdx);
+                filterMatchesMap = res.map;
+                orUnionRows = res.union;
+                // Build tabs and show union by default
+                buildOrTabs(selectedIdx);
+                activeOrKey = 'All';
+                renderTable(applySearchToRows(orUnionRows));
+            }
         });
+
 
         /* compute filtered rows considering date and selected filters (AND) */
         // ---------- REPLACE computeFilteredData() WITH THIS ----------
@@ -782,50 +870,149 @@
             return null;
         }
 
-        /* export logic */
-        $('#exportBtn').on('click', function () {
-            if (!originalData || originalData.length === 0) {
-                alert('Please upload and load a sheet first.');
-                return;
-            }
-            const selectedIdx = $('.filter-checkbox:checked').map(function () { return parseInt(this.value); }).get();
+        // Return rows after applying only date-range filter (no filter keywords)
+        // This is the base set used to compute per-filter matches (export also uses same logic).
+        function getBaseRowsByDate() {
+            if (!originalData || originalData.length === 0) return [];
             const dateCol = dateColumnSelected;
             const sDate = $('#startDate').val() ? new Date($('#startDate').val()) : null;
             const eDate = $('#endDate').val() ? new Date($('#endDate').val()) : null;
-
-            let baseRows = originalData.slice();
+            let rows = originalData.slice();
             if (dateCol && (sDate || eDate)) {
-                baseRows = baseRows.filter(r => {
+                const startTime = sDate ? new Date(sDate.getFullYear(), sDate.getMonth(), sDate.getDate(), 0, 0, 0, 0) : null;
+                const endTime = eDate ? new Date(eDate.getFullYear(), eDate.getMonth(), eDate.getDate(), 23, 59, 59, 999) : null;
+                rows = rows.filter(r => {
                     const raw = String(r[dateCol] || '').trim();
                     if (!raw) return false;
                     const parsed = parseDateSmart(raw);
                     if (!parsed) return false;
-                    if (sDate && parsed < new Date(sDate.setHours(0, 0, 0, 0))) return false;
-                    if (eDate && parsed > new Date(eDate.setHours(23, 59, 59, 999))) return false;
+                    if (startTime && parsed < startTime) return false;
+                    if (endTime && parsed > endTime) return false;
                     return true;
                 });
             }
+            return rows;
+        }
+
+        // Build a map of matched rows per selected filter index, also return union and intersection
+        function computeFilterMatches(baseRows, selectedIdx) {
+            const map = {};
+            const selectedFilters = selectedIdx.map(i => filtersConfig[i]).filter(Boolean);
+
+            // small helper to create stable row key for dedupe
+            const rowKey = (r) => headers.map(h => String(r[h] || '')).join('||');
+
+            // compute map
+            selectedFilters.forEach((f, idx) => {
+                const filterIndex = selectedIdx[idx]; // actual index in config
+                const matched = baseRows.filter(r => matchesFilter(r, f));
+                map[filterIndex] = matched;
+            });
+
+            // union (dedupe)
+            const unionMap = new Map();
+            selectedIdx.forEach(i => {
+                (map[i] || []).forEach(r => unionMap.set(rowKey(r), r));
+            });
+            const union = Array.from(unionMap.values());
+
+            // intersection: rows that are present in every selected filter's matched set
+            let intersection = [];
+            if (selectedIdx.length > 0) {
+                intersection = baseRows.filter(r => {
+                    return selectedIdx.every(i => (map[i] || []).some(mr => rowKey(mr) === rowKey(r)));
+                });
+            }
+
+            return { map, union, intersection };
+        }
+
+        function applySearchToRows(rows) {
+            if (!currentSearch) return rows;
+            const s = currentSearch.toLowerCase();
+            return rows.filter(r => headers.some(h => String(r[h] || '').toLowerCase().includes(s)));
+        }
+
+        function buildOrTabs(selectedIdx) {
+            const $tabs = $('#orTabs').empty();
+            if (!selectedIdx || selectedIdx.length === 0) {
+                $('#orTabsContainer').hide();
+                return;
+            }
+            // Show container
+            $('#orTabsContainer').show();
+
+            // Add "All" tab
+            const allBtn = $(`<button class="btn btn-sm btn-outline-primary active" data-key="All">All</button>`);
+            $tabs.append(allBtn);
+
+            // Add one tab per selected filter
+            selectedIdx.forEach(i => {
+                const fname = filtersConfig[i]?.name || `Filter ${i}`;
+                const btn = $(`<button class="btn btn-sm btn-outline-primary" data-key="f_${i}">${fname}</button>`);
+                $tabs.append(btn);
+            });
+
+            // Tabs click handling (delegated)
+            $tabs.off('click').on('click', 'button', function () {
+                $tabs.find('button').removeClass('active');
+                $(this).addClass('active');
+                const key = $(this).attr('data-key');
+                activeOrKey = key;
+                if (key === 'All') {
+                    renderTable(applySearchToRows(orUnionRows));
+                } else {
+                    const idx = parseInt(key.replace('f_', ''), 10);
+                    const rows = filterMatchesMap[idx] || [];
+                    renderTable(applySearchToRows(rows));
+                }
+            });
+        }
+
+
+
+
+
+        /* export logic */
+        $('#exportBtn').off('click').on('click', function () {
+            if (!originalData || originalData.length === 0) {
+                alert('Please upload and load a sheet first.');
+                return;
+            }
+
+            const selectedIdx = $('.filter-checkbox:checked').map(function () { return parseInt(this.value); }).get();
+            const baseRows = getBaseRowsByDate();
 
             const wb = XLSX.utils.book_new();
-            if (selectedIdx.length === 0) {
+
+            if (!selectedIdx || selectedIdx.length === 0) {
+                // no filters: export base rows as "All"
                 const ws = XLSX.utils.json_to_sheet(exportJsonRows(baseRows));
                 XLSX.utils.book_append_sheet(wb, ws, 'All');
             } else {
-                const selectedFilters = selectedIdx.map(i => filtersConfig[i]).filter(Boolean);
-                selectedFilters.forEach(f => {
-                    const matched = baseRows.filter(r => matchesFilter(r, f));
-                    const rows = exportJsonRows(matched);
-                    const ws = XLSX.utils.json_to_sheet(rows);
-                    XLSX.utils.book_append_sheet(wb, ws, sanitizeSheetName(f.name || 'Filter'));
-                });
-                const combined = baseRows.filter(r => selectedFilters.every(f => matchesFilter(r, f)));
-                const combinedWs = XLSX.utils.json_to_sheet(exportJsonRows(combined));
-                XLSX.utils.book_append_sheet(wb, combinedWs, sanitizeSheetName('Combined'));
+                // Mode dependent export
+                filterMode = $('#filterModeOr').is(':checked') ? 'OR' : 'AND';
+                if (filterMode === 'AND') {
+                    const selectedFilters = selectedIdx.map(i => filtersConfig[i]).filter(Boolean);
+                    const combined = baseRows.filter(r => selectedFilters.every(f => matchesFilter(r, f)));
+                    const combinedWs = XLSX.utils.json_to_sheet(exportJsonRows(combined));
+                    XLSX.utils.book_append_sheet(wb, combinedWs, sanitizeSheetName('Combined'));
+                } else {
+                    // OR: export each selected filter into its own sheet
+                    const selectedFilters = selectedIdx.map(i => ({ idx: i, f: filtersConfig[i] })).filter(Boolean);
+                    selectedFilters.forEach(obj => {
+                        const matched = baseRows.filter(r => matchesFilter(r, obj.f));
+                        const rows = exportJsonRows(matched);
+                        const ws = XLSX.utils.json_to_sheet(rows);
+                        XLSX.utils.book_append_sheet(wb, ws, sanitizeSheetName(obj.f.name || `Filter-${obj.idx}`));
+                    });
+                }
             }
 
             const fname = `filtered_export_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.xlsx`;
             XLSX.writeFile(wb, fname);
         });
+
 
         function exportJsonRows(rows) {
             if (!rows || rows.length === 0) {
@@ -853,6 +1040,8 @@
             headers = [];
             originalData = [];
             renderTable([]);
+            // start UTC clock
+            startUTCClock();
             // hide date selector container immediately on page load (still used by code)
             //$('#dateColumnSelect').parent().hide();
         });
@@ -866,7 +1055,6 @@
             }
         });
 
-        
     </script>
 </body>
 </html>
