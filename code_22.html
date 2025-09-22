@@ -1,0 +1,1060 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>PowerBI Export Filterer</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <!-- Bootstrap 5 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- DataTables -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+    <!-- Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* ---------- ADD THESE RULES into your <style> block ---------- */
+        body {
+            font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+            background: #f4f7fb;
+        }
+
+        .app-header {
+            background: linear-gradient(90deg, #0d6efd, #6f42c1);
+            color: white;
+        }
+
+        .card {
+            box-shadow: 0 6px 18px rgba(22, 35, 60, 0.06);
+            border: none;
+        }
+
+        .center-search {
+            max-width: 720px;
+            margin: 0 auto;
+        }
+
+        mark {
+            background: #fff176;
+            color: #000;
+            padding: 0 0.12rem;
+            border-radius: 2px;
+        }
+
+        .small-muted {
+            font-size: 0.85rem;
+            color: #6c757d;
+        }
+
+        .filters-dropdown {
+            min-width: 320px;
+        }
+
+        /* ---------- ADD/APPEND: force borders for DataTables (including cloned tables) ---------- */
+
+        /* Most-specific selectors first */
+        #dataTable,
+        table#dataTable,
+        .dataTables_wrapper table,
+        .dataTables_scrollHeadInner table,
+        .dataTables_scrollBody table {
+            border-collapse: collapse !important;
+            border: 1px solid #000 !important;
+            box-sizing: border-box;
+        }
+
+        /* Apply borders to headers and body cells (original and cloned) */
+        #dataTable thead th,
+        #dataTable tbody td,
+        .dataTables_wrapper table thead th,
+        .dataTables_wrapper table tbody td,
+        .dataTables_scrollHeadInner table thead th,
+        .dataTables_scrollBody table tbody td {
+            border: 1px solid #000 !important;
+            padding: 8px 10px !important;
+            box-sizing: border-box;
+            background-clip: padding-box;
+            /* ensure border is visible */
+        }
+
+        /* If DataTables created separate header table, thead background */
+        .dataTables_scrollHeadInner table thead th {
+            background-color: #fafafa !important;
+            font-weight: 600;
+        }
+
+        /* Prevent wrapper backgrounds from hiding borders */
+        .dataTables_scrollBody,
+        .dataTables_scrollHead {
+            background: transparent !important;
+        }
+
+        /* Keep ellipsis behavior but ensure border areas visible */
+        .dataTables_wrapper .dataTables_scrollBody td,
+        .dataTables_wrapper .dataTables_scrollHeadInner th {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* For small screens keep layout sane */
+        @media (max-width: 767px) {
+
+            #dataTable,
+            .dataTables_wrapper table {
+                font-size: 0.95rem;
+            }
+        }
+
+        table.dataTable td {
+            word-break: break-word;
+            vertical-align: top;
+        }
+
+        .dt-center {
+            text-align: center;
+        }
+
+        .file-info {
+            font-size: 0.9rem;
+            color: #495057;
+        }
+
+        /* --- Add / replace these rules in your <style> --- */
+        table.dataTable th,
+        table.dataTable td {
+            max-width: 320px;
+            /* limit very wide columns */
+            white-space: nowrap;
+            /* keep single line with ellipsis */
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        table.dataTable th {
+            /* lightweight attempt to allow manual resize in browsers that support resize on table headers */
+            resize: horizontal;
+            overflow: auto;
+            cursor: col-resize;
+        }
+
+        /* Keep horizontal scrolling enabled */
+        .dataTables_wrapper .dataTables_scroll {
+            overflow-x: auto;
+        }
+
+        /* optional: make the highlight color more visible */
+        mark {
+            background: #fffa8b;
+            color: #000;
+            padding: 0 0.12rem;
+            border-radius: 2px;
+        }
+
+        /* ---------- ADD/REPLACE in your <style> ---------- */
+        .container {
+            max-width: 98vw;
+        }
+
+        main.container {
+            padding-left: 12px;
+            padding-right: 12px;
+        }
+
+        table.dataTable th,
+        table.dataTable td {
+            max-width: 360px;
+            /* cap cell width to avoid extreme stretching */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Ensure table wrapper allows horizontal scroll always */
+        .dataTables_wrapper .dataTables_scroll {
+            overflow-x: auto;
+        }
+
+        table.dataTable {
+            border-collapse: collapse !important;
+            border: 1px solid #000 !important;
+            /* outer table border */
+        }
+
+        table.dataTable thead th,
+        table.dataTable tbody td {
+            border: 1px solid #000 !important;
+            /* thin black border for every cell */
+            padding: 8px 10px;
+            /* adjust for readability */
+        }
+
+        table.dataTable thead th {
+            border-bottom-width: 1px;
+            background-color: #fafafa;
+            /* subtle header background for contrast */
+        }
+
+        /* make sure DataTables' stripe/hover don't hide borders */
+        table.dataTable.stripe tbody tr.odd,
+        table.dataTable.stripe tbody tr.even {
+            background-clip: padding-box;
+            /* keep borders visible */
+        }
+
+        /* optional: tighten header font/weight for clarity */
+        table.dataTable thead th {
+            font-weight: 600;
+        }
+
+        /* if you use the responsive container, ensure border remains visible */
+        .table-responsive,
+        .dataTables_wrapper {
+            overflow-x: auto;
+        }
+
+        /* Larger fonts and spacing when viewport is large */
+        @media (min-width: 1400px) {
+            body {
+                font-size: 1.02rem;
+            }
+
+            .card {
+                padding: 18px;
+            }
+
+            table.dataTable td {
+                padding: 10px 12px;
+            }
+        }
+
+        #utcClock { opacity: 1.95; text-align: center; min-width: 140px  }
+
+
+        @media (max-width: 767px) {
+            .filters-dropdown {
+                min-width: 100%;
+            }
+
+            .center-search {
+                padding: 0 12px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <header class="py-3 app-header">
+        <div class="container d-flex align-items-center justify-content-between">
+            <div>
+                <h3 class="mb-0">PowerBI Export Filterer</h3>
+                <div class="text-white small">Upload ⬆️ → Filter 🔍 → Export ⬇️.
+                </div>
+            </div>
+            <div class="text-end">
+                <div class="text-white small">Filter the Desired events</div>
+                <div id="utcClock" class="text-white small mt-1" style="font-family: monospace; letter-spacing:0.06em;">
+                </div>
+            </div>
+
+        </div>
+    </header>
+
+    <main class="container my-4">
+        <div class="card p-3">
+            <div class="row g-3 align-items-center">
+
+                <div class="col-12 col-md-5">
+                    <label class="form-label"><strong>1) Upload Excel (PowerBI export)</strong></label>
+                    <input id="fileInput" class="form-control" type="file" accept=".xlsx,.xls,.csv" />
+                    <div class="mt-2 file-info" id="fileInfo">No file loaded</div>
+
+                    <div class="mt-3">
+                        <label class="form-label"><strong>2) Choose sheet</strong></label>
+                        <select id="sheetSelect" class="form-select"></select>
+                    </div>
+
+                    <div class="mt-3">
+                        <label class="form-label"><strong>Date Filter</strong></label>
+                        <div class="d-flex gap-2">
+                            <input id="startDate" class="form-control" type="date" />
+                            <input id="endDate" class="form-control" type="date" />
+                        </div>
+                        <div class="form-text">Rows will be filtered by <b>DATE TIME PRE KO (UTC)</b> within the chosen
+                            range.</div>
+                    </div>
+
+                </div>
+
+                <div class="col-12 col-md-2 text-center">
+                    <label class="form-label"><strong>Global Search</strong></label>
+                    <div class="center-search">
+                        <input id="globalSearch" class="form-control form-control-lg text-center"
+                            placeholder="Search entire table & highlight..." />
+                        <div class="mt-2 small-muted">Clearing this restores table.</div>
+                    </div>
+                    <div class="mt-3 d-grid gap-2">
+                        <button id="clearAll" class="btn btn-outline-secondary">Clear Filters & Search</button>
+                    </div>
+                </div>
+
+                <div class="col-12 col-md-5">
+                    <label class="form-label"><strong>Predefined Filters</strong></label>
+
+                    <div class="d-flex gap-2 mb-2 align-items-center">
+                        <div class="dropdown filters-dropdown">
+                            <button class="btn btn-light border dropdown-toggle w-100 text-start" type="button"
+                                id="filtersMenuBtn" data-bs-toggle="dropdown" aria-expanded="false">
+                                Select filters...
+                            </button>
+                            <div class="dropdown-menu p-3" aria-labelledby="filtersMenuBtn" id="filtersMenu">
+                                <div id="filtersList" class="mb-2"></div>
+                                <div class="d-flex justify-content-between">
+                                    <button id="selectAllFilters" class="btn btn-sm btn-outline-primary">Select
+                                        All</button>
+                                    <button id="clearFiltersBtn" class="btn btn-sm btn-outline-secondary">Clear</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- AND / OR toggle -->
+                        <div class="btn-group" role="group" aria-label="Filter mode">
+                            <input type="radio" class="btn-check" name="filterMode" id="filterModeAnd"
+                                autocomplete="off" checked>
+                            <label class="btn btn-outline-secondary" for="filterModeAnd">AND</label>
+
+                            <input type="radio" class="btn-check" name="filterMode" id="filterModeOr"
+                                autocomplete="off">
+                            <label class="btn btn-outline-secondary" for="filterModeOr">OR</label>
+                        </div>
+
+                        <button id="applyFilters" class="btn btn-primary">Apply</button>
+                    </div>
+
+                    <!-- OR-mode tab area (hidden until OR is applied) -->
+                    <div id="orTabsContainer" class="mt-2" style="display:none;">
+                        <div id="orTabs" class="btn-group" role="tablist" aria-label="Filter pages"></div>
+                    </div>
+
+
+                    <div class="d-flex gap-2">
+                        <button id="exportBtn" class="btn btn-success w-100">Export Filtered → Excel</button>
+                    </div>
+
+                    <hr />
+
+                    <div>
+                        <h6 class="mb-1">Notes</h6>
+                        <ul class="small-muted mb-0">
+                            <li>Filters come from <code>filters.json</code> (same folder) if present, or embedded
+                                defaults.</li>
+                            <li><strong>Exact</strong> — whole cell equals keyword (case-insensitive).</li>
+                            <li><strong>Present</strong> — keyword appears anywhere in the cell text.</li>
+                            <li><strong>Non-Blank</strong> — cell contains any value.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-4 p-3">
+            <div class="table-responsive">
+                <table id="dataTable" class="display stripe hover" style="width:100%"></table>
+            </div>
+        </div>
+    </main>
+
+    <footer class="py-3 text-center small-muted">
+        Built for quick filtering & exports • Edit filters via <code>filters.json</code> • Developer-friendly
+    </footer>
+
+    <!-- Scripts: jQuery first, then Bootstrap, then DataTables, then XLSX, then our code -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+    <script src="https://momentjs.com/downloads/moment.min.js"></script>
+    <script src="https://cdn.datatables.net/plug-ins/1.13.6/sorting/datetime-moment.js"></script>
+    <script>
+        $(document).ready(function () {
+            // Register DataTables to use moment.js date parsing
+            $.fn.dataTable.moment("DD/MM/YYYY HH:mm:ss");
+        });
+    </script>
+
+
+
+    <script>
+        /* Updated & hardened index.js inlined */
+
+        /* Embedded default filters (fallback if filters.json not found) */
+        const defaultFilters = [
+            { "name": "HEVC Events", "column": "HEVC", "keyword": "HEVC", "Condition": "Exact" },
+            { "name": "Dolby Audio", "column": "AUDIO LANG", "keyword": "5.1", "Condition": "Present" },
+            { "name": "NFL Events", "column": "PROPERTY", "keyword": "NFL", "Condition": "Exact" },
+            { "name": "Bundesliga Events", "column": "PROPERTY", "keyword": "Bundesliga", "Condition": "Exact" },
+            { "name": "Tier-5", "column": "BROADCAST TIER", "keyword": "5", "Condition": "Present" },
+            { "name": "Tier-4", "column": "BROADCAST TIER", "keyword": "4", "Condition": "Present" },
+            { "name": "Tier-3", "column": "BROADCAST TIER", "keyword": "3", "Condition": "Present" },
+            { "name": "MTA Events", "column": "MULTI-TRACK AUDIO", "keyword": "Yes", "Condition": "Present" },
+            { "name": "CC Events", "column": "CLOSED CAPTIONS", "keyword": "", "Condition": "Non-Blank" }
+        ];
+
+        let filtersConfig = [];
+        let originalData = [];
+        let headers = [];
+        let dataTable = null;
+        let currentSearch = '';
+        let workbookSheets = [];
+        let dateColumnSelected = null; // NEW: chosen date column name (string) - always DATE TIME PRE KO (UTC)
+        let filterMode = 'AND';          // 'AND' or 'OR'
+        let filterMatchesMap = {};       // map: filterIndex -> matched rows (after date-filter)
+        let orUnionRows = [];            // union of matched rows
+        let activeOrKey = 'All';         // 'All' or string index (e.g., 'f_1')
+
+
+        /* Helpers */
+        function setFileInfo(t) { $('#fileInfo').text(t || ''); }
+        function escapeHtml(str) { return String(str || '').replace(/[&<>"'`=\/]/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '/': '&#x2F;', '`': '&#x60;', '=': '&#x3D;' })[s]); }
+        function escapeRegExp(s) { return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+        function sanitizeSheetName(name) { return String(name || '').replace(/[\[\]\*\/\\\?\:]/g, '').slice(0, 31) || 'Sheet'; }
+
+        // Convert Excel serial date (e.g. 45918.9979) to JS Date
+        function excelSerialToJSDate(serial) {
+            // Excel's epoch starts at 1899-12-31; JS epoch uses milliseconds since 1970-01-01
+            // Excel stores serial as days since 1899-12-31 (with the infamous 1900 leap bug).
+            // Using common conversion: (serial - 25569) * 86400 * 1000
+            const millis = (serial - 25569) * 86400 * 1000;
+            return new Date(millis);
+        }
+
+        // Format JS Date to 'DD/MM/YYYY HH:MM:SS'
+        function formatDateTime(dt) {
+            if (!(dt instanceof Date) || isNaN(dt.getTime())) return '';
+            const pad = (n) => (n < 10 ? '0' + n : n);
+            const dd = pad(dt.getDate());
+            const mm = pad(dt.getMonth() + 1);
+            const yyyy = dt.getFullYear();
+            const HH = pad(dt.getHours());
+            const MM = pad(dt.getMinutes());
+            const SS = pad(dt.getSeconds());
+            return `${dd}/${mm}/${yyyy} ${HH}:${MM}:${SS}`;
+        }
+
+        // ---------- UTC clock (24-hour HH:MM:SS) ----------
+        function pad2(n) { return n < 10 ? '0' + n : String(n); }
+
+        function updateUTCClockOnce() {
+            const d = new Date();
+            const h = pad2(d.getUTCHours());
+            const m = pad2(d.getUTCMinutes());
+            const s = pad2(d.getUTCSeconds());
+            // show pure HH:MM:SS and optionally append " UTC"
+            const txt = `${h}:${m}:${s} UTC`;
+            document.getElementById('utcClock') && (document.getElementById('utcClock').textContent = txt);
+        }
+
+        function startUTCClock() {
+            // update immediately then every 1s
+            updateUTCClockOnce();
+            // store interval id so it can be cleared if needed later
+            window._utcClockInterval = window._utcClockInterval || setInterval(updateUTCClockOnce, 1000);
+        }
+
+        function stopUTCClock() {
+            if (window._utcClockInterval) {
+                clearInterval(window._utcClockInterval);
+                window._utcClockInterval = null;
+            }
+        }
+
+
+        /* Load filters.json if present */
+        async function loadFiltersConfig() {
+            try {
+                const resp = await fetch('filters.json', { cache: "no-store" });
+                if (!resp.ok) throw new Error('no filters.json');
+                filtersConfig = await resp.json();
+            } catch (e) {
+                filtersConfig = defaultFilters;
+                console.warn('Using embedded default filters. Place filters.json next to index.html to override.');
+            }
+            buildFiltersUI();
+        }
+
+        /* Build filter checkbox UI */
+        function buildFiltersUI() {
+            const $list = $('#filtersList').empty();
+            filtersConfig.forEach((f, i) => {
+                const id = 'flt_' + i;
+                const el = $(`
+      <div class="form-check">
+        <input class="form-check-input filter-checkbox" type="checkbox" value="${i}" id="${id}">
+        <label class="form-check-label" for="${id}"><strong>${escapeHtml(f.name)}</strong> <span class="small-muted">— ${escapeHtml(f.column)} [${escapeHtml(f.Condition)}]</span></label>
+      </div>
+    `);
+                $list.append(el);
+            });
+        }
+
+        /* file input */
+        $('#fileInput').on('change', async (e) => {
+            const f = e.target.files[0];
+            if (!f) return;
+            setFileInfo(`Loading ${f.name}...`);
+            try {
+                const buffer = await f.arrayBuffer();
+                // ensure XLSX available
+                if (typeof XLSX === 'undefined') {
+                    alert('XLSX library failed to load. Check your internet connection or CDN.');
+                    console.error('XLSX undefined');
+                    return;
+                }
+                const wb = XLSX.read(buffer, { type: 'array' });
+                workbookSheets = wb.SheetNames.slice();
+                const $sheetSelect = $('#sheetSelect').empty();
+                wb.SheetNames.forEach((s, idx) => $sheetSelect.append($('<option>').val(s).text(s + (wb.SheetNames.length > 1 ? ` (sheet ${idx + 1})` : ''))));
+                $('#sheetSelect').val(wb.SheetNames[0]);
+                $('#sheetSelect').data('workbook', wb);
+                loadSelectedSheet();
+            } catch (err) {
+                console.error(err);
+                setFileInfo('Failed to read file. Make sure it is a valid .xlsx/.xls/.csv file.');
+            }
+        });
+
+        /* sheet change */
+        $('#sheetSelect').on('change', loadSelectedSheet);
+
+        function loadSelectedSheet() {
+            const sheetName = $('#sheetSelect').val();
+            const wb = $('#sheetSelect').data('workbook');
+            if (!wb || !sheetName) return;
+
+            const ws = wb.Sheets[sheetName];
+
+            // Read as array-of-arrays to preserve raw values (numbers, dates, text)
+            const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+            if (!aoa || aoa.length === 0) {
+                setFileInfo('Sheet is empty');
+                return;
+            }
+
+            // first row is headers
+            headers = aoa[0].map(h => String(h || '').trim());
+
+            // Detect columns that look like Excel serial dates by sampling first N rows:
+            // We'll mark column indices that look like serial dates (numbers between ~29500 and ~50000)
+            const possibleDateCols = new Set();
+            const sampleRows = aoa.slice(1, 30); // sample up to first 30 rows
+            sampleRows.forEach(row => {
+                row.forEach((cell, idx) => {
+                    if (typeof cell === 'number') {
+                        // Excel serial for dates around years 2000-2050 will be ~36526 (2000-01-01 = 36526)
+                        // for 2025 it's ~46000; so check reasonable range and fractional part allowed.
+                        if (cell > 29500 && cell < 50000) {
+                            possibleDateCols.add(idx);
+                        }
+                    }
+                });
+            });
+
+            // Build originalData mapping header -> normalized cell (convert excel serials to readable strings)
+            originalData = aoa.slice(1).map(row => {
+                const obj = {};
+                headers.forEach((h, idx) => {
+                    let val = row[idx];
+                    // If value is numeric and this column flagged as possible date, convert
+                    if (typeof val === 'number' && possibleDateCols.has(idx)) {
+                        try {
+                            const dt = excelSerialToJSDate(val);
+                            if (dt && !isNaN(dt.getTime())) {
+                                val = formatDateTime(dt); // formatted string 'DD/MM/YYYY HH:MM:SS'
+                            } else {
+                                val = String(val);
+                            }
+                        } catch (e) {
+                            val = String(val);
+                        }
+                    } else {
+                        // For non-number or not date-like number, keep stringified value
+                        val = (val === null || val === undefined) ? '' : String(val);
+                    }
+                    obj[h] = val;
+                });
+                return obj;
+            });
+
+            setFileInfo(`Loaded sheet "${sheetName}" — ${originalData.length} rows, ${headers.length} columns`);
+
+            populateDateColumns();
+            renderTable(originalData);
+        }
+
+
+        /* populate date columns dropdown */
+        // ---------- REPLACE populateDateColumns() ----------
+        function populateDateColumns() {
+            // We no longer rely on a DOM select. Choose DATE TIME PRE KO (UTC) automatically.
+            dateColumnSelected = null;
+            const desired = 'DATE TIME PRE KO (UTC)';
+            if (headers && headers.length) {
+                // exact case-insensitive match first
+                const matched = headers.find(h => h.toLowerCase().trim() === desired.toLowerCase().trim());
+                if (matched) {
+                    dateColumnSelected = matched;
+                } else {
+                    // fallback: look for a header that contains both 'date time' and 'utc'
+                    const contains = headers.find(h => h.toLowerCase().includes('date time') && h.toLowerCase().includes('utc'));
+                    if (contains) dateColumnSelected = contains;
+                    // final fallback: try any header that includes 'date' and 'time'
+                    else {
+                        const anyDate = headers.find(h => h.toLowerCase().includes('date') && h.toLowerCase().includes('time'));
+                        if (anyDate) dateColumnSelected = anyDate;
+                    }
+                }
+            }
+
+            // Hide any leftover select in DOM if exists (safe even if it's already removed)
+            $('#dateColumnSelect').hide();
+            // Optionally hide label associated with it (if present)
+            $('label[for="dateColumnSelect"]').hide();
+        }
+
+        if (!dateColumnSelected) {
+            console.warn('Date column "DATE TIME PRE KO (UTC)" not found. Date filtering will be disabled until a date-like column is present.');
+            // Optionally inform user via UI:
+            // setFileInfo('Warning: DATE TIME PRE KO (UTC) column not found — date filtering disabled.');
+        }
+
+        /* render table - safe destroy & re-init */
+        // Replace existing renderTable function with this safe version
+        function renderTable(rowsToShow) {
+            rowsToShow = rowsToShow || [];
+
+            // If DataTable exists, destroy it and remove wrapper completely
+            try {
+                if ($.fn.dataTable.isDataTable('#dataTable')) {
+                    $('#dataTable').DataTable().clear().destroy(true);
+                }
+            } catch (e) {
+                console.warn('Warning while destroying DataTable (ignored):', e);
+            }
+
+            // Remove any DataTables wrapper and replace the table element to ensure a clean slate
+            const $parent = $('#dataTable').parent();
+            $('#dataTable').remove(); // remove old table
+            $parent.append('<table id="dataTable" class="display stripe hover" style="width:100%"></table>');
+
+            // Build thead
+            const $thead = $('<thead>');
+            const $theadRow = $('<tr>');
+            headers.forEach(h => $theadRow.append($('<th>').text(h)));
+            $thead.append($theadRow);
+            $('#dataTable').append($thead);
+
+            // Build tbody
+            const $tbody = $('<tbody>');
+            rowsToShow.forEach(r => {
+                const $tr = $('<tr>');
+                headers.forEach(h => {
+                    const cell = (r[h] === null || r[h] === undefined) ? '' : String(r[h]);
+                    if (currentSearch) {
+                        const regex = new RegExp(escapeRegExp(currentSearch), 'gi');
+                        const escaped = escapeHtml(cell);
+                        const highlighted = escaped.replace(regex, m => `<mark>${m}</mark>`);
+                        $tr.append($('<td>').html(highlighted));
+                    } else {
+                        $tr.append($('<td>').html(escapeHtml(cell)));
+                    }
+                });
+                $tbody.append($tr);
+            });
+
+            $('#dataTable').append($tbody);
+
+            // Initialize DataTable safely inside try/catch
+
+            try {
+                // Tell DataTables to parse DD/MM/YYYY HH:mm:ss format
+                $.fn.dataTable.moment("DD/MM/YYYY HH:mm:ss");
+
+                dataTable = $('#dataTable').DataTable({
+                    pageLength: Math.min(Math.max(10, available), 250),
+                    lengthMenu: [10, 25, 50, 100, 250],
+                    scrollX: true,
+                    autoWidth: false,
+                    ordering: true,
+                    columnDefs: [
+                        { targets: '_all', defaultContent: '' },
+                        {
+                            targets: headers.indexOf("DATE TIME PRE KO (UTC)"),
+                            type: 'datetime-moment'
+                        }
+                    ],
+                    order: [[headers.indexOf("DATE TIME PRE KO (UTC)"), 'desc']] // default: latest first
+                });
+            } catch (err) {
+                console.error('DataTable initialization error (non-fatal):', err);
+            }
+
+        }
+
+
+        /* global search */
+        $('#globalSearch').on('input', function () {
+            currentSearch = $(this).val().trim();
+            const filtered = computeFilteredData();
+            renderTable(filtered);
+        });
+
+        /* clear all */
+        // ---------- REPLACE clearAll handler WITH THIS ----------
+        $('#clearAll').off('click').on('click', () => {
+            $('.filter-checkbox').prop('checked', false);
+            $('#globalSearch').val('');
+            $('#startDate').val('');
+            $('#endDate').val('');
+            currentSearch = '';
+            $('#filtersMenuBtn').text('Select filters...');
+            filterMode = 'AND';
+            $('#filterModeAnd').prop('checked', true);
+            filterMatchesMap = {};
+            orUnionRows = [];
+            $('#orTabsContainer').hide();
+            renderTable(originalData || []);
+        });
+
+
+        // Auto-recompute table when user changes date inputs
+        $('#startDate, #endDate').on('change', function () {
+            const filtered = computeFilteredData();
+            renderTable(filtered);
+        });
+
+        /* filter UI buttons */
+        $('#selectAllFilters').on('click', () => $('.filter-checkbox').prop('checked', true));
+        $('#clearFiltersBtn').on('click', () => $('.filter-checkbox').prop('checked', false));
+        $('#applyFilters').off('click').on('click', () => {
+            const selectedIdx = $('.filter-checkbox:checked').map(function () { return parseInt(this.value); }).get();
+            // base rows apply date filter only (search will be applied on render)
+            const baseRows = getBaseRowsByDate();
+
+            filterMatchesMap = {};
+            orUnionRows = [];
+
+            // If no filters selected, just show the baseRows (apply global search)
+            if (!selectedIdx || selectedIdx.length === 0) {
+                $('#orTabsContainer').hide();
+                const rows = applySearchToRows(baseRows);
+                renderTable(rows);
+                return;
+            }
+
+            // Mode check
+            filterMode = $('#filterModeOr').is(':checked') ? 'OR' : 'AND';
+
+            if (filterMode === 'AND') {
+                // reuse computeFilteredData (which respects date+search and AND behavior)
+                // but computeFilteredData currently reads filters from checkboxes; it will work
+                const andRows = computeFilteredData();
+                $('#orTabsContainer').hide();
+                renderTable(andRows);
+            } else {
+                // OR mode: build per-filter matches & union
+                const res = computeFilterMatches(baseRows, selectedIdx);
+                filterMatchesMap = res.map;
+                orUnionRows = res.union;
+                // Build tabs and show union by default
+                buildOrTabs(selectedIdx);
+                activeOrKey = 'All';
+                renderTable(applySearchToRows(orUnionRows));
+            }
+        });
+
+
+        /* compute filtered rows considering date and selected filters (AND) */
+        // ---------- REPLACE computeFilteredData() WITH THIS ----------
+        function computeFilteredData() {
+            if (!originalData || originalData.length === 0) return [];
+
+            // Work on a fresh copy
+            let rows = originalData.slice();
+
+            // Date range filter (do not mutate date objects)
+            const dateCol = dateColumnSelected; // use the auto-chosen column
+            const sDateVal = $('#startDate').val();
+            const eDateVal = $('#endDate').val();
+            const sDate = sDateVal ? new Date(sDateVal) : null;
+            const eDate = eDateVal ? new Date(eDateVal) : null;
+            if (dateCol && (sDate || eDate)) {
+                const startTime = sDate ? new Date(sDate.getFullYear(), sDate.getMonth(), sDate.getDate(), 0, 0, 0, 0) : null;
+                const endTime = eDate ? new Date(eDate.getFullYear(), eDate.getMonth(), eDate.getDate(), 23, 59, 59, 999) : null;
+                rows = rows.filter(r => {
+                    const raw = String(r[dateCol] || '').trim();
+                    if (!raw) return false;
+                    const parsed = parseDateSmart(raw);
+                    if (!parsed) return false;
+                    if (startTime && parsed < startTime) return false;
+                    if (endTime && parsed > endTime) return false;
+                    return true;
+                });
+            }
+
+            // Selected filter indexes
+            const selectedIdx = $('.filter-checkbox:checked').map(function () { return parseInt(this.value); }).get();
+
+            // If no filters selected → return rows (but still apply global search)
+            if (!selectedIdx || selectedIdx.length === 0) {
+                if (currentSearch) {
+                    const s = currentSearch.toLowerCase();
+                    return rows.filter(r => headers.some(h => String(r[h] || '').toLowerCase().includes(s)));
+                }
+                return rows;
+            }
+
+            // Build selected filter objects
+            const selectedFilters = selectedIdx.map(i => filtersConfig[i]).filter(Boolean);
+
+            // AND logic: keep rows that match ALL selected filters
+            let combined = rows.filter(r => selectedFilters.every(f => matchesFilter(r, f)));
+
+            // Apply global search (if present) on the combined result
+            if (currentSearch) {
+                const s = currentSearch.toLowerCase();
+                combined = combined.filter(r => headers.some(h => String(r[h] || '').toLowerCase().includes(s)));
+            }
+
+            return combined;
+        }
+
+        /* filter matching logic */
+        function matchesFilter(rowObj, filterDef) {
+            const col = filterDef.column;
+            const actualCol = findHeaderCaseInsensitive(col);
+            if (!actualCol) return false;
+            const cell = String(rowObj[actualCol] || '').trim();
+            const cond = (filterDef.Condition || filterDef.condition || 'Present').toString().trim();
+            const keyword = (filterDef.keyword || '').toString();
+            if (cond.toLowerCase() === 'non-blank' || cond.toLowerCase() === 'nonblank') {
+                return cell !== '';
+            }
+            if (cond.toLowerCase() === 'exact') {
+                return cell.toLowerCase() === keyword.toLowerCase();
+            }
+            if (keyword === '') return false;
+            return cell.toLowerCase().includes(keyword.toLowerCase());
+        }
+
+        function findHeaderCaseInsensitive(name) {
+            if (!name) return null;
+            const target = name.toLowerCase().trim();
+            for (const h of headers) if (h.toLowerCase().trim() === target) return h;
+            for (const h of headers) if (h.toLowerCase().includes(target)) return h;
+            return null;
+        }
+
+        /* parse dates (smart) */
+        function parseDateSmart(str) {
+            if (!str) return null;
+            const d1 = new Date(str);
+            if (!isNaN(d1.getTime())) return d1;
+            const m = String(str).match(/(\d{1,2})[\/\-\.\s](\d{1,2})[\/\-\.\s](\d{2,4})/);
+            if (m) {
+                let dd = parseInt(m[1], 10), mm = parseInt(m[2], 10) - 1, yy = parseInt(m[3], 10);
+                if (yy < 100) yy += 2000;
+                const d = new Date(yy, mm, dd);
+                if (!isNaN(d.getTime())) return d;
+            }
+            return null;
+        }
+
+        // Return rows after applying only date-range filter (no filter keywords)
+        // This is the base set used to compute per-filter matches (export also uses same logic).
+        function getBaseRowsByDate() {
+            if (!originalData || originalData.length === 0) return [];
+            const dateCol = dateColumnSelected;
+            const sDate = $('#startDate').val() ? new Date($('#startDate').val()) : null;
+            const eDate = $('#endDate').val() ? new Date($('#endDate').val()) : null;
+            let rows = originalData.slice();
+            if (dateCol && (sDate || eDate)) {
+                const startTime = sDate ? new Date(sDate.getFullYear(), sDate.getMonth(), sDate.getDate(), 0, 0, 0, 0) : null;
+                const endTime = eDate ? new Date(eDate.getFullYear(), eDate.getMonth(), eDate.getDate(), 23, 59, 59, 999) : null;
+                rows = rows.filter(r => {
+                    const raw = String(r[dateCol] || '').trim();
+                    if (!raw) return false;
+                    const parsed = parseDateSmart(raw);
+                    if (!parsed) return false;
+                    if (startTime && parsed < startTime) return false;
+                    if (endTime && parsed > endTime) return false;
+                    return true;
+                });
+            }
+            return rows;
+        }
+
+        // Build a map of matched rows per selected filter index, also return union and intersection
+        function computeFilterMatches(baseRows, selectedIdx) {
+            const map = {};
+            const selectedFilters = selectedIdx.map(i => filtersConfig[i]).filter(Boolean);
+
+            // small helper to create stable row key for dedupe
+            const rowKey = (r) => headers.map(h => String(r[h] || '')).join('||');
+
+            // compute map
+            selectedFilters.forEach((f, idx) => {
+                const filterIndex = selectedIdx[idx]; // actual index in config
+                const matched = baseRows.filter(r => matchesFilter(r, f));
+                map[filterIndex] = matched;
+            });
+
+            // union (dedupe)
+            const unionMap = new Map();
+            selectedIdx.forEach(i => {
+                (map[i] || []).forEach(r => unionMap.set(rowKey(r), r));
+            });
+            const union = Array.from(unionMap.values());
+
+            // intersection: rows that are present in every selected filter's matched set
+            let intersection = [];
+            if (selectedIdx.length > 0) {
+                intersection = baseRows.filter(r => {
+                    return selectedIdx.every(i => (map[i] || []).some(mr => rowKey(mr) === rowKey(r)));
+                });
+            }
+
+            return { map, union, intersection };
+        }
+
+        function applySearchToRows(rows) {
+            if (!currentSearch) return rows;
+            const s = currentSearch.toLowerCase();
+            return rows.filter(r => headers.some(h => String(r[h] || '').toLowerCase().includes(s)));
+        }
+
+        function buildOrTabs(selectedIdx) {
+            const $tabs = $('#orTabs').empty();
+            if (!selectedIdx || selectedIdx.length === 0) {
+                $('#orTabsContainer').hide();
+                return;
+            }
+            // Show container
+            $('#orTabsContainer').show();
+
+            // Add "All" tab
+            const allBtn = $(`<button class="btn btn-sm btn-outline-primary active" data-key="All">All</button>`);
+            $tabs.append(allBtn);
+
+            // Add one tab per selected filter
+            selectedIdx.forEach(i => {
+                const fname = filtersConfig[i]?.name || `Filter ${i}`;
+                const btn = $(`<button class="btn btn-sm btn-outline-primary" data-key="f_${i}">${fname}</button>`);
+                $tabs.append(btn);
+            });
+
+            // Tabs click handling (delegated)
+            $tabs.off('click').on('click', 'button', function () {
+                $tabs.find('button').removeClass('active');
+                $(this).addClass('active');
+                const key = $(this).attr('data-key');
+                activeOrKey = key;
+                if (key === 'All') {
+                    renderTable(applySearchToRows(orUnionRows));
+                } else {
+                    const idx = parseInt(key.replace('f_', ''), 10);
+                    const rows = filterMatchesMap[idx] || [];
+                    renderTable(applySearchToRows(rows));
+                }
+            });
+        }
+
+
+
+
+
+        /* export logic */
+        $('#exportBtn').off('click').on('click', function () {
+            if (!originalData || originalData.length === 0) {
+                alert('Please upload and load a sheet first.');
+                return;
+            }
+
+            const selectedIdx = $('.filter-checkbox:checked').map(function () { return parseInt(this.value); }).get();
+            const baseRows = getBaseRowsByDate();
+
+            const wb = XLSX.utils.book_new();
+
+            if (!selectedIdx || selectedIdx.length === 0) {
+                // no filters: export base rows as "All"
+                const ws = XLSX.utils.json_to_sheet(exportJsonRows(baseRows));
+                XLSX.utils.book_append_sheet(wb, ws, 'All');
+            } else {
+                // Mode dependent export
+                filterMode = $('#filterModeOr').is(':checked') ? 'OR' : 'AND';
+                if (filterMode === 'AND') {
+                    const selectedFilters = selectedIdx.map(i => filtersConfig[i]).filter(Boolean);
+                    const combined = baseRows.filter(r => selectedFilters.every(f => matchesFilter(r, f)));
+                    const combinedWs = XLSX.utils.json_to_sheet(exportJsonRows(combined));
+                    XLSX.utils.book_append_sheet(wb, combinedWs, sanitizeSheetName('Combined'));
+                } else {
+                    // OR: export each selected filter into its own sheet
+                    const selectedFilters = selectedIdx.map(i => ({ idx: i, f: filtersConfig[i] })).filter(Boolean);
+                    selectedFilters.forEach(obj => {
+                        const matched = baseRows.filter(r => matchesFilter(r, obj.f));
+                        const rows = exportJsonRows(matched);
+                        const ws = XLSX.utils.json_to_sheet(rows);
+                        XLSX.utils.book_append_sheet(wb, ws, sanitizeSheetName(obj.f.name || `Filter-${obj.idx}`));
+                    });
+                }
+            }
+
+            const fname = `filtered_export_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.xlsx`;
+            XLSX.writeFile(wb, fname);
+        });
+
+
+        function exportJsonRows(rows) {
+            if (!rows || rows.length === 0) {
+                const headerObj = {};
+                headers.forEach(h => headerObj[h] = '');
+                return [headerObj];
+            }
+            return rows.map(r => {
+                const o = {};
+                headers.forEach(h => o[h] = r[h] === undefined ? '' : r[h]);
+                return o;
+            });
+        }
+
+        /* update filters button label */
+        $(document).on('change', '.filter-checkbox', function () {
+            const selected = $('.filter-checkbox:checked').map(function () { return filtersConfig[this.value]?.name }).get();
+            const txt = selected.length ? selected.join(', ') : 'Select filters...';
+            $('#filtersMenuBtn').text(txt);
+        });
+
+        /* initialization */
+        $(document).ready(async function () {
+            await loadFiltersConfig();
+            headers = [];
+            originalData = [];
+            renderTable([]);
+            // start UTC clock
+            startUTCClock();
+            // hide date selector container immediately on page load (still used by code)
+            //$('#dateColumnSelect').parent().hide();
+        });
+        // ---------- ADD this to your JS (near the end, after initialization) ----------
+        $(window).on('resize', function () {
+            if ($.fn.dataTable.isDataTable('#dataTable')) {
+                const tbl = $('#dataTable').DataTable();
+                const approxRowHeight = 36;
+                const available = Math.max(10, Math.floor((window.innerHeight - 380) / approxRowHeight));
+                tbl.page.len(Math.min(Math.max(10, available), 250)).draw(false);
+            }
+        });
+
+    </script>
+</body>
+</html>
