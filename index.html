@@ -227,7 +227,11 @@
             }
         }
 
-        #utcClock { opacity: 1.95; text-align: center; min-width: 140px  }
+        #utcClock {
+            opacity: 1.95;
+            text-align: center;
+            min-width: 140px
+        }
 
 
         @media (max-width: 767px) {
@@ -429,17 +433,19 @@
         }
 
         // Format JS Date to 'DD/MM/YYYY HH:MM:SS'
+        // Format JS Date to 'DD/MM/YYYY HH:MM:SS' using UTC components (no local timezone shift)
         function formatDateTime(dt) {
             if (!(dt instanceof Date) || isNaN(dt.getTime())) return '';
-            const pad = (n) => (n < 10 ? '0' + n : n);
-            const dd = pad(dt.getDate());
-            const mm = pad(dt.getMonth() + 1);
-            const yyyy = dt.getFullYear();
-            const HH = pad(dt.getHours());
-            const MM = pad(dt.getMinutes());
-            const SS = pad(dt.getSeconds());
+            const pad = (n) => (n < 10 ? '0' + n : String(n));
+            const dd = pad(dt.getUTCDate());
+            const mm = pad(dt.getUTCMonth() + 1);
+            const yyyy = dt.getUTCFullYear();
+            const HH = pad(dt.getUTCHours());
+            const MM = pad(dt.getUTCMinutes());
+            const SS = pad(dt.getUTCSeconds());
             return `${dd}/${mm}/${yyyy} ${HH}:${MM}:${SS}`;
         }
+
 
         // ---------- UTC clock (24-hour HH:MM:SS) ----------
         function pad2(n) { return n < 10 ? '0' + n : String(n); }
@@ -779,33 +785,13 @@
         function computeFilteredData() {
             if (!originalData || originalData.length === 0) return [];
 
-            // Work on a fresh copy
-            let rows = originalData.slice();
+            // 1) Start from base rows filtered by date (UTC-safe)
+            let rows = getBaseRowsByDate();
 
-            // Date range filter (do not mutate date objects)
-            const dateCol = dateColumnSelected; // use the auto-chosen column
-            const sDateVal = $('#startDate').val();
-            const eDateVal = $('#endDate').val();
-            const sDate = sDateVal ? new Date(sDateVal) : null;
-            const eDate = eDateVal ? new Date(eDateVal) : null;
-            if (dateCol && (sDate || eDate)) {
-                const startTime = sDate ? new Date(sDate.getFullYear(), sDate.getMonth(), sDate.getDate(), 0, 0, 0, 0) : null;
-                const endTime = eDate ? new Date(eDate.getFullYear(), eDate.getMonth(), eDate.getDate(), 23, 59, 59, 999) : null;
-                rows = rows.filter(r => {
-                    const raw = String(r[dateCol] || '').trim();
-                    if (!raw) return false;
-                    const parsed = parseDateSmart(raw);
-                    if (!parsed) return false;
-                    if (startTime && parsed < startTime) return false;
-                    if (endTime && parsed > endTime) return false;
-                    return true;
-                });
-            }
-
-            // Selected filter indexes
+            // 2) Selected filter indexes
             const selectedIdx = $('.filter-checkbox:checked').map(function () { return parseInt(this.value); }).get();
 
-            // If no filters selected → return rows (but still apply global search)
+            // If no filters selected -> just apply global search (if any) and return
             if (!selectedIdx || selectedIdx.length === 0) {
                 if (currentSearch) {
                     const s = currentSearch.toLowerCase();
@@ -817,17 +803,37 @@
             // Build selected filter objects
             const selectedFilters = selectedIdx.map(i => filtersConfig[i]).filter(Boolean);
 
-            // AND logic: keep rows that match ALL selected filters
-            let combined = rows.filter(r => selectedFilters.every(f => matchesFilter(r, f)));
+            // Determine filter mode (AND or OR)
+            const mode = $('#filterModeOr').is(':checked') ? 'OR' : 'AND';
 
-            // Apply global search (if present) on the combined result
-            if (currentSearch) {
-                const s = currentSearch.toLowerCase();
-                combined = combined.filter(r => headers.some(h => String(r[h] || '').toLowerCase().includes(s)));
+            if (mode === 'AND') {
+                // AND: row must match all filters (intersection)
+                let combined = rows.filter(r => selectedFilters.every(f => matchesFilter(r, f)));
+                // Apply global search
+                if (currentSearch) {
+                    const s = currentSearch.toLowerCase();
+                    combined = combined.filter(r => headers.some(h => String(r[h] || '').toLowerCase().includes(s)));
+                }
+                return combined;
+            } else {
+                // OR: row matches any selected filter (union)
+                const seen = new Map();
+                selectedFilters.forEach(f => {
+                    rows.filter(r => matchesFilter(r, f)).forEach(r => {
+                        const key = headers.map(h => String(r[h] || '')).join('||');
+                        if (!seen.has(key)) seen.set(key, r);
+                    });
+                });
+                let union = Array.from(seen.values());
+                // Apply global search
+                if (currentSearch) {
+                    const s = currentSearch.toLowerCase();
+                    union = union.filter(r => headers.some(h => String(r[h] || '').toLowerCase().includes(s)));
+                }
+                return union;
             }
-
-            return combined;
         }
+
 
         /* filter matching logic */
         function matchesFilter(rowObj, filterDef) {
@@ -857,42 +863,107 @@
 
         /* parse dates (smart) */
         function parseDateSmart(str) {
-            if (!str) return null;
-            const d1 = new Date(str);
-            if (!isNaN(d1.getTime())) return d1;
-            const m = String(str).match(/(\d{1,2})[\/\-\.\s](\d{1,2})[\/\-\.\s](\d{2,4})/);
-            if (m) {
-                let dd = parseInt(m[1], 10), mm = parseInt(m[2], 10) - 1, yy = parseInt(m[3], 10);
-                if (yy < 100) yy += 2000;
-                const d = new Date(yy, mm, dd);
-                if (!isNaN(d.getTime())) return d;
+            if (str === null || str === undefined || String(str).trim() === '') return null;
+            str = String(str).trim();
+
+            // 1) If string includes an explicit timezone indicator or ISO that Date() parses to a valid instant, try it first.
+            // This handles strings like '2025-09-22T23:59:00Z' or '2025-09-22T23:59:00+00:00'
+            const isoTry = new Date(str);
+            if (!isNaN(isoTry.getTime())) {
+                // isoTry may be interpreted as local for some formats — accept only if the string contains 'Z' or an offset
+                if (/[zZ]|[+\-]\d{2}:\d{2}$/.test(str) || str.includes('T')) {
+                    return isoTry;
+                }
+                // otherwise fall through and try explicit DMY parsing below
             }
+
+            // 2) If it's numeric-like (Excel serial)
+            if (!isNaN(Number(str))) {
+                const maybeNum = Number(str);
+                if (maybeNum > 29500 && maybeNum < 60000) {
+                    return excelSerialToJSDate(maybeNum);
+                }
+            }
+
+            // 3) Match DD/MM/YYYY or DD-MM-YYYY with optional time (HH:MM or HH:MM:SS)
+            const reDMY = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/;
+            const m = str.match(reDMY);
+            if (m) {
+                let dd = parseInt(m[1], 10);
+                let mm = parseInt(m[2], 10) - 1;
+                let yy = parseInt(m[3], 10);
+                if (yy < 100) yy += 2000;
+                const hh = m[4] ? parseInt(m[4], 10) : 0;
+                const min = m[5] ? parseInt(m[5], 10) : 0;
+                const sec = m[6] ? parseInt(m[6], 10) : 0;
+                // Create a Date using UTC so the resulting Date represents that UTC time
+                const ms = Date.UTC(yy, mm, dd, hh, min, sec);
+                return new Date(ms);
+            }
+
+            // fallback
             return null;
         }
 
+
         // Return rows after applying only date-range filter (no filter keywords)
         // This is the base set used to compute per-filter matches (export also uses same logic).
+        // Return rows after applying only date-range filter (no filter keywords).
+        // Parses the date inputs reliably (YYYY-MM-DD) and uses UTC ms for comparisons.
         function getBaseRowsByDate() {
             if (!originalData || originalData.length === 0) return [];
+
             const dateCol = dateColumnSelected;
-            const sDate = $('#startDate').val() ? new Date($('#startDate').val()) : null;
-            const eDate = $('#endDate').val() ? new Date($('#endDate').val()) : null;
-            let rows = originalData.slice();
-            if (dateCol && (sDate || eDate)) {
-                const startTime = sDate ? new Date(sDate.getFullYear(), sDate.getMonth(), sDate.getDate(), 0, 0, 0, 0) : null;
-                const endTime = eDate ? new Date(eDate.getFullYear(), eDate.getMonth(), eDate.getDate(), 23, 59, 59, 999) : null;
-                rows = rows.filter(r => {
-                    const raw = String(r[dateCol] || '').trim();
-                    if (!raw) return false;
-                    const parsed = parseDateSmart(raw);
-                    if (!parsed) return false;
-                    if (startTime && parsed < startTime) return false;
-                    if (endTime && parsed > endTime) return false;
-                    return true;
-                });
-            }
-            return rows;
+            if (!dateCol) return originalData.slice();
+
+            // Read the raw input values (strings like "2025-09-22")
+            const sVal = $('#startDate').val();
+            const eVal = $('#endDate').val();
+
+            // If neither date selected, return full set
+            if (!sVal && !eVal) return originalData.slice();
+
+            // Parse YYYY-MM-DD into UTC ms safely (avoid new Date(string) ambiguity)
+            const parseInputDateToUTCStart = (isoDateStr) => {
+                if (!isoDateStr) return null;
+                const parts = isoDateStr.split('-');
+                if (parts.length !== 3) return null;
+                const y = parseInt(parts[0], 10);
+                const m = parseInt(parts[1], 10) - 1;
+                const d = parseInt(parts[2], 10);
+                return Date.UTC(y, m, d, 0, 0, 0, 0); // start of day UTC
+            };
+            const parseInputDateToUTCEnd = (isoDateStr) => {
+                if (!isoDateStr) return null;
+                const parts = isoDateStr.split('-');
+                if (parts.length !== 3) return null;
+                const y = parseInt(parts[0], 10);
+                const m = parseInt(parts[1], 10) - 1;
+                const d = parseInt(parts[2], 10);
+                return Date.UTC(y, m, d, 23, 59, 59, 999); // end of day UTC
+            };
+
+            const startMs = sVal ? parseInputDateToUTCStart(sVal) : null;
+            const endMs = eVal ? parseInputDateToUTCEnd(eVal) : null;
+
+            // If neither start nor end parsed correctly, return full set
+            if (startMs === null && endMs === null) return originalData.slice();
+
+            // Filter rows by parsing the cell's value with parseDateSmart() (which returns a UTC Date)
+            const filtered = originalData.filter(r => {
+                const raw = String(r[dateCol] || '').trim();
+                if (!raw) return false;
+                const parsed = parseDateSmart(raw); // returns Date constructed in UTC (per your parseDateSmart)
+                if (!parsed || isNaN(parsed.getTime())) return false;
+                const parsedMs = parsed.getTime();
+                if (startMs !== null && parsedMs < startMs) return false;
+                if (endMs !== null && parsedMs > endMs) return false;
+                return true;
+            });
+
+            return filtered;
         }
+
 
         // Build a map of matched rows per selected filter index, also return union and intersection
         function computeFilterMatches(baseRows, selectedIdx) {
@@ -1057,4 +1128,5 @@
 
     </script>
 </body>
+
 </html>
