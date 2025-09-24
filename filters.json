@@ -1,12 +1,13 @@
 [
   { "name": "HDR Events", "column": "TX TYPE", "keyword": "HDR", "Condition": "Present" },
   { "name": "Dolby Audio", "column": "AUDIO LANG", "keyword": "5.1", "Condition": "Present" },
-  { "name": "NFL Events", "column": "PROPERTY", "keyword": "NFL", "Condition": "Exact" },
-  { "name": "Bundesliga Events", "column": "PROPERTY", "keyword": "Bundesliga", "Condition": "Exact" },
   { "name": "Tier-5", "column": "BROADCAST TIER", "keyword": "5", "Condition": "Present" },
   { "name": "Tier-4", "column": "BROADCAST TIER", "keyword": "4", "Condition": "Present" },
   { "name": "Tier-3", "column": "BROADCAST TIER", "keyword": "3", "Condition": "Present" },
+  { "name": "NFL Events", "column": "PROPERTY", "keyword": "NFL", "Condition": "Exact" },
+  { "name": "Bundesliga Events", "column": "PROPERTY", "keyword": "Bundesliga", "Condition": "Exact" },
+  { "name": "Reduced Latency", "column": "OTHER INFO (MULTIVIEW)", "keyword": "Latency", "Condition": "Present" },
   { "name": "MTA Events", "column": "MULTI-TRACK AUDIO", "keyword": "Yes", "Condition": "Present" },
   { "name": "CC Events", "column": "CLOSED CAPTIONS", "keyword": "", "Condition": "Non-Blank" },
-  { "name": "Reduced Latency", "column": "OTHER INFO (MULTIVIEW)", "keyword": "Latency", "Condition": "Present" },
+  { "name": "Test Events", "column": "FIXTURE", "keyword": "TEST", "Condition": "Present" },
 ]
