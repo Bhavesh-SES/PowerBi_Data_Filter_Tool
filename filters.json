@@ -8,5 +8,5 @@
   { "name": "Tier-3", "column": "BROADCAST TIER", "keyword": "3", "Condition": "Present" },
   { "name": "MTA Events", "column": "MULTI-TRACK AUDIO", "keyword": "Yes", "Condition": "Present" },
   { "name": "CC Events", "column": "CLOSED CAPTIONS", "keyword": "", "Condition": "Non-Blank" },
-  { "name": "Reduced Latency", "column": "OTHER INFO (MULTIVIEW)", "keyword": "", "Latency": "Present" },
+  { "name": "Reduced Latency", "column": "OTHER INFO (MULTIVIEW)", "keyword": "Latency", "Condition": "Present" },
 ]
