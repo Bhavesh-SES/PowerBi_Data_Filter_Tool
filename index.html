@@ -1107,6 +1107,19 @@
             $('#filtersMenuBtn').text(txt);
         });
 
+        /* Blocked the Right click option to inspect the source code as a security concern of code copyright.
+        Below is exact code added newly at last part of code: */
+
+        document.addEventListener('contextmenu', event => event.preventDefault());
+        document.addEventListener('keydown', e => {
+            if (e.ctrlKey && (e.key === 'u' || e.key === 'U' || e.key === 'i' || e.key === 'I' || e.key === 'j' || e.key === 'J')) {
+                e.preventDefault();
+            }
+            if (e.keyCode === 123) { // F12 key
+                e.preventDefault();
+            }
+        });
+
         /* initialization */
         $(document).ready(async function () {
             await loadFiltersConfig();
